@@ -35,22 +35,22 @@
 /
 */
 
-#define INPUT_WIDTH   512
-#define INPUT_HEIGHT  512
+#define INPUT_WIDTH   64
+#define INPUT_HEIGHT  64
 #define OPTIMIZER "RMSprop"
-#define LEARNING_RATE 0.01f
+#define LEARNING_RATE 0.05f
 #define REPLAY_MEMORY 10000
-#define BATCH_SIZE 8
+#define BATCH_SIZE 64
 #define USE_LSTM true
-#define LSTM_SIZE 32
+#define LSTM_SIZE 256
 
 /*
 / DONE - Define Reward Parameters
 /
 */
 
-#define REWARD_WIN  1.0f
-#define REWARD_LOSS -1.0f
+#define REWARD_WIN  2000.0f
+#define REWARD_LOSS -2000.0f
 
 // Define Object Names
 #define WORLD_NAME "arm_world"
@@ -268,8 +268,8 @@ void ArmPlugin::onCollisionMsg(ConstContactsPtr &contacts)
 		*/
 		
 		
-		if( strcmp(contacts->contact(i).collision2().c_str(), COLLISION_ITEM) == 0 )
-			continue;
+//		if( strcmp(contacts->contact(i).collision1().c_str(), COLLISION_ITEM) == 0 )
+		if( strcmp(contacts->contact(i).collision2().c_str(), COLLISION_POINT) == 0 )
 		{
 			rewardHistory = REWARD_WIN;
 
@@ -357,7 +357,7 @@ bool ArmPlugin::updateAgent()
 	/ DONE - Increase or decrease the joint position based on whether the action is even or odd
 	/
 	*/
-	float joint = ref[action/2] + ((action % 2)?-1.0f:1.0f) * actionJointDelta; // DONE - Set joint position based on whether action is even or odd.
+	float joint = ref[action/2] + ((action % 2 == 0)? 1.0f: -1.0f) * actionJointDelta; // DONE - Set joint position based on whether action is even or odd.
 
 	// limit the joint to the specified range
 	if( joint < JOINT_MIN )
@@ -546,7 +546,7 @@ void ArmPlugin::OnUpdate(const common::UpdateInfo& updateInfo)
 	if( maxEpisodeLength > 0 && episodeFrames > maxEpisodeLength )
 	{
 		printf("ArmPlugin - triggering EOE, episode has exceeded %i frames\n", maxEpisodeLength);
-		rewardHistory = REWARD_LOSS;
+		rewardHistory = REWARD_LOSS * 100.0f;
 		newReward     = true;
 		endEpisode    = true;
 	}
@@ -582,12 +582,13 @@ void ArmPlugin::OnUpdate(const common::UpdateInfo& updateInfo)
 		*/
 		
 		
+		const float distGoal = BoxDistance(propBBox, gripBBox); // compute the reward from distance to the goal
 		if(gripBBox.min.z < groundContact)
 		{
 						
 			if(DEBUG){printf("GROUND CONTACT, EOE\n");}
 
-			rewardHistory = REWARD_LOSS;
+			rewardHistory = REWARD_LOSS * distGoal;
 			newReward     = true;
 			endEpisode    = true;
 		}
@@ -599,7 +600,6 @@ void ArmPlugin::OnUpdate(const common::UpdateInfo& updateInfo)
 
 		else
 		{
-			const float distGoal = BoxDistance(propBBox, gripBBox); // compute the reward from distance to the goal
 
 			if(DEBUG){printf("distance('%s', '%s') = %f\n", gripper->GetName().c_str(), prop->model->GetName().c_str(), distGoal);}
 
@@ -607,11 +607,13 @@ void ArmPlugin::OnUpdate(const common::UpdateInfo& updateInfo)
 			if( episodeFrames > 1 )
 			{
 				const float distDelta  = lastGoalDistance - distGoal;
+				const float alpha = 0.2f;
 
 				// compute the smoothed moving average of the delta of the distance to the goal
-				avgGoalDelta  = (avgGoalDelta * 0.5) + (distDelta * (1 - 0.5));
+				avgGoalDelta  = (avgGoalDelta * alpha) + (distDelta * (1.0f - alpha));
 				rewardHistory = avgGoalDelta;
 				newReward     = true;	
+
 			}
 
 			lastGoalDistance = distGoal;
